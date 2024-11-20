@@ -1,0 +1,1 @@
+clang++ -std=c++17 src/main.cpp -lb15fdrv -o program/main
