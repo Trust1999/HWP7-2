@@ -3,6 +3,7 @@
 #include <thread>
 #include <mutex>
 #include <bitset>
+#include <optional>
 #include <b15f/b15f.h>
 
 //extern void inputSender();
@@ -11,9 +12,19 @@
 B15F drv = B15F :: getInstance () ; //drv wird ein Objekt einer Klasse
 std::mutex b15_mutex;
 bool ende = true;
+bool wechsel = false;
+
+
+void melden(uint8_t a){
+    b15_mutex.lock();    
+    drv.setRegister(&PORTA, 0x0a);
+    b15_mutex.unlock();
+    //b15_mutex.unlock();
+} 
 
 // CRC-8 Implementierung (wie im Sender)
-/*uint8_t berechnungSummeZurueck(const std::vector<uint8_t> &data) {
+uint8_t berechnungSummeZurueck(const std::vector<uint8_t> &data) {
+    
     uint8_t crc = 0; // Initial CRC-Wert
     uint8_t polynomial = 0x07; // CRC-8 Polynom
 
@@ -28,93 +39,143 @@ bool ende = true;
         }
     }
     return crc;
-    return 1;
-}*/
+}
 
-uint8_t umwandeln(std::vector<uint8_t> &ed){
-    uint8_t speicherByte;
+std::vector<uint8_t> umwandeln(std::vector<uint8_t> &ed) {
+    std::vector<uint8_t> paket;
 
-    std::cout<<"*********"<<std::bitset<8>(ed.at(0))<<"*********";    
-    std::cout<<"*********"<<std::bitset<8>(ed.at(1))<<"*********";  
-    std::cout<<"*********"<<std::bitset<8>(ed.at(2))<<"*********";  
 
-    if(ed.at(0) == 0b00001101 && ed.at(1) == 0b00000010 && ed.at(2) == 0b00001101 || ed.at(0) == 0b00000101 && ed.at(1) == 0b00001010 && ed.at(2) == 0b00000101){
-        ende = false;
-        return 0;
-    }
-    else{
-        speicherByte |= (ed.at(0) << 6);        // Nimm 5 höchstwertige Bits aus dem ersten Byte
-        //std::cout<<"qqqqqqqq"<<std::bitset<8>(speicherByte)<<"qqqqqqqq";
-        speicherByte |= (ed.at(1) << 3);        // Nimm 5 höchstwertige Bits aus dem zweiten Byte
-        //std::cout<<"qqqqqqqq"<<std::bitset<8>(speicherByte)<<"qqqqqqqq";
-        speicherByte |= ed.at(2);             // Nimm 5 niederwertige Bits aus dem dritten Byte; // In char umwandeln und speichern
+    for (size_t i = 0; i < ed.size(); i += 3) {
+        uint8_t speicherByte = 0;
         
+        // Debug: Print the 3 bytes
+        /*std::cout << "*********" << std::bitset<8>(ed.at(i)) << "*********";
+        std::cout << "*********" << std::bitset<8>(ed.at(i + 1)) << "*********";
+        std::cout << "*********" << std::bitset<8>(ed.at(i + 2)) << "*********";*/
+
+        if (ed.at(i) & 0x04) {
+            speicherByte |= (ed.at(i) << 6);
+            speicherByte |= (ed.at(i + 1) << 3);
+            speicherByte |= ed.at(i + 2);
+
+            if (speicherByte == 0b00100100) {  // End condition
+                ende = false;
+                return paket;  // Early exit if end pattern is found
+            }
+        }
+        else {
+            speicherByte |= (ed.at(i) << 6);  // Take the 5 most significant bits from the first byte
+            speicherByte |= (ed.at(i + 1) << 3);  // Take 5 more from the second byte
+            speicherByte |= ed.at(i + 2);  // Take the last 5 bits from the third byte
+        }
+
+        //std::cout << "++++++" << std::bitset<8>(speicherByte) << "++++++";
+        paket.push_back(speicherByte);  // Add the processed byte to the result
     }
-    std::cout<<"++++++"<<std::bitset<8>(speicherByte)<<"++++++";
-    return speicherByte;
+
+    return paket;
 }
 
 uint8_t auslesen(){
-    std::lock_guard<std::mutex> lock(b15_mutex);
-    std::cout<<std::bitset<8>((drv.getRegister(&PINA) & 0xF0) >> 4)<<"; ";
-    return (drv.getRegister(&PINA) & 0xF0) >> 4;
+    //std::lock_guard<std::mutex> lock(b15_mutex);
+    b15_mutex.lock();
+    uint8_t byte = (drv.getRegister(&PINA) & 0xF0) >> 4;
+    b15_mutex.unlock();
+    //std::cout<<std::bitset<8>(byte)<<"; ";
+    return byte;   
 }
+
 
 // Function to receive a 64-byte block with 9-bit data format
 std::vector<uint8_t> erhaltenesPacket() {
 
     std::vector<uint8_t> erhalteneDaten;
     std::vector<uint8_t> paket;
-    size_t counterClock = 0;
-    uint8_t zwischenspeicher = 0b00001111;
+    bool schleife = true;
 
-    while (ende) { // 64 - Daten + Check Summe
-    //while(counterClock<=5){
+    uint8_t zwischenspeicher = 0x0f;
 
-        while(zwischenspeicher == auslesen()){
-            drv.delay_ms(1);
-        } 
-        
-        zwischenspeicher = auslesen();
-        erhalteneDaten.push_back(zwischenspeicher&0x07); // Lese 3 bits vom Pin 4-6
-        counterClock++;
+    while(zwischenspeicher != auslesen()){
+        drv.delay_ms(1);
+    }
 
-        if(counterClock%3 == 0){
-            paket.push_back(umwandeln(erhalteneDaten));
-            erhalteneDaten.clear();
-            //erhalteneDaten.push_back(auslesen());
+    zwischenspeicher = auslesen();
+
+    do{
+        for(size_t i = 0; i < 195; i++){ // 64 - Daten + Check Summe
+
+            while(zwischenspeicher == auslesen()){
+                drv.delay_ms(1); //bei nicht schreiben hier erhöhen
+            } 
+            zwischenspeicher = auslesen();
+            erhalteneDaten.push_back(zwischenspeicher&0x07); // Lese 3 bits vom Pin 4-6
+            std::cerr<<i<<" ";
         }
-    }
-    std::cout<<"ttttttttt";
-    for(char c: paket){
-        std::cout<<c;
-    }
-    ende = true;
-    /*if(berechnungSummeZurueck(zeichen)){
-        zeichen.clear();
-    }
-    //melden();*/
-    return erhalteneDaten;
+        //std::cout<<"";
+        paket = umwandeln(erhalteneDaten);
+
+        uint8_t crc = paket.back();
+        paket.pop_back();
+
+        /*std::cerr<<"ttttttttt";
+        for(char c: paket){
+            std::cerr<<c;
+        }
+        std::cerr<<"ttttttttt";*/
+
+
+        if(berechnungSummeZurueck(paket) == crc){
+            //std::cerr<<"ja";
+            melden('A');
+            schleife = false;
+        }
+        else{
+            melden('D');
+            //std::cerr<<"nein";
+            paket.clear();
+        }
+    }while(schleife);
+
+    return paket;
 }
 
 void outputReceiver() {
 
-    while (true) {
+
+    while (ende) {
         std::vector<uint8_t> block = erhaltenesPacket();
         if (!block.empty()) {
             std::string output(block.begin(), block.end());
-            //std::cout << output << flush; // schreiben zu STD:OUT
+            std::cout << output << std::flush; // schreiben zu STD:OUT
         }
     }
 }
 
 bool meldung(){
-    //drv.setRegister(&DDRA, 0x00);
+    //b15_mutex.lock();
+    uint8_t byte = 0b00000000;
 
-    while(true){
-        return false;
+    //std::cerr<<"test";
+    //for(size_t i; i <= 40; i++){
+    while (true){
+        //std::cerr<<"test";
+        b15_mutex.lock();
+        byte = (drv.getRegister(&PINA) & 0xF0) >> 4;
+        b15_mutex.unlock();
+        if(byte == 0x0A){
+            //std::cerr<<"hi";
+            //b15_mutex.unlock();
+            return false;
+        }
+        else if(byte == 0x0D){
+            //std::cerr<<"by";
+            //b15_mutex.unlock();
+            return true;
+        }
+        drv.delay_ms(1);
     }
-    return false;
+    //b15_mutex.unlock();
+    return true;
 }
 
 uint8_t berechnungSumme(const std::vector<uint8_t> &data) {
@@ -131,78 +192,64 @@ uint8_t berechnungSumme(const std::vector<uint8_t> &data) {
             }
         }
     }
+    //std::cerr<<".."<<std::bitset<8>(crc)<<"..";
     return crc;
 }
 
-void ausgabe(uint8_t byte, uint8_t cC){
-    std::lock_guard<std::mutex> lock(b15_mutex);
-    //std::cout<<std::bitset<4>(byte | (cC % 2 * 8))<<", ";
-    drv.setRegister(&PORTA, byte | (cC % 2 * 8));    
+void schreiben(uint8_t byte, uint8_t cC){
+    //std::lock_guard<std::mutex> lock(b15_mutex);
+    b15_mutex.lock();
+    drv.setRegister(&PORTA, byte | (cC % 2 * 8));
+    b15_mutex.unlock();
 } 
 
-/*void sendBlock(const std::vector<uint8_t> &paket, size_t position) {
+void sendBlock(const std::vector<uint8_t> &paket, size_t position) {
 
     std::vector<uint8_t> block = paket;
-    block.push_back(berechnungSumme(paket));
-
     do{
         size_t counterClock = 0;
 
-        ausgabe(0b00000111, counterClock);
-
         for (size_t z = 0; z < block.size(); z++) {
-                uint8_t maske = 0x00;
-                uint8_t byte = block.at(z);
+            uint8_t maske = 0x00;
+            uint8_t byte = block.at(z);
 
-                if(z == position) maske = 0x04;
+            if(z == position) maske = 0x04;
 
-                for (int i = 6; i >= 0; i -= 3) {            // Übertragung 3-Bits
-                    uint8_t bitsToSend = (byte >> i) & 0x07 | maske; // Nimmt 3 bits
-                    
-                    ausgabe(bitsToSend, counterClock);
-
-                    drv.delay_ms(10);
-                    counterClock++;
-                }
+            for (int i = 6; i >= 0; i -= 3) {            // Übertragung 3-Bits
+            uint8_t bitsToSend = (byte >> i) & 0x07 | maske; // Nimmt 3 bits
+            //std::cout<<std::bitset<8>(bitsToSend | (counterClock % 2 * 8))<<"E, ";
+            schreiben(bitsToSend, counterClock);    
+            drv.delay_ms(10);
+            std::cerr<<"-"<<counterClock<<"-";
+            counterClock++;
             }
-            ausgabe(0b00000111, counterClock);
+        }
     }while(meldung());
-}*/
+    drv.setRegister(&PORTA, 0x0f);
+}
 
 // Sendet das Datenpacket
 void sendBlock(const std::vector<uint8_t> &paket) {
-
-    //lock_guard<mutex> lock(b15_mutex); // Protect B15F access
-    std::vector<uint8_t> block = paket;
-    block.push_back(berechnungSumme(paket)); // Append checksum
+    
+    std::vector<uint8_t> block = paket;    
     
     do{
         size_t counterClock = 0;
-
-        /*ausgabe(0b00000111, 1);
-        drv.delay_ms(10);
-        ausgabe(0b00000000, 0);
-        drv.delay_ms(10);
-        ausgabe(0b00000111, 1);
-        drv.delay_ms(10);*/
 
         for (uint8_t byte: block) {
             //uint8_t byte = block.at(z);
             for (int i = 6; i >= 0; i -= 3) {            // Übertragung 3-Bits
                 uint8_t bitsToSend = (byte >> i) & 0x07; // Nimmt 3 bits
-                std::cout<<std::bitset<8>(bitsToSend | (counterClock % 2 * 8))<<"E, ";
-                ausgabe(bitsToSend, counterClock);    
+                //std::cout<<std::bitset<8>(bitsToSend | (counterClock % 2 * 8))<<"E, ";
+                schreiben(bitsToSend, counterClock);    
                 drv.delay_ms(10);
+                std::cerr<<"-"<<counterClock<<"-";
                 counterClock++;
             }
         }
-        ausgabe(0b00000101, counterClock);
-        drv.delay_ms(10);
-        ausgabe(0b00000010, counterClock+1);
-        drv.delay_ms(10);
-        ausgabe(0b00000101, counterClock+2);
-        drv.delay_ms(10);
-    }while(false);
+    }while(meldung());
+    drv.setRegister(&PORTA, 0x0f);
+
 }
 
 void inputSender() {
@@ -211,9 +258,10 @@ void inputSender() {
     while (getline(std::cin, buffer)) {
         std::vector<uint8_t> paket;
         for (char c : buffer) {
-            std::cout<<std::bitset<8>(c)<<'\n'<<'\n';
+            //std::cerr<<std::bitset<8>(c)<<'\n'<<'\n';
             paket.push_back(c);
             if (paket.size() == 64) {
+                paket.push_back(berechnungSumme(paket));
                 sendBlock(paket);
                 paket.clear();
             }
@@ -221,10 +269,12 @@ void inputSender() {
 
         // Restdaten sind kleiner 64
         if (!paket.empty()) {
-            //size_t position = paket.size();
-            //paket.resize(64, 0); // Erweitern mit nullen für Block
-            //sendBlock(paket, position);
-            sendBlock(paket);
+            std::cerr<<"Fertig";
+            paket.push_back(berechnungSumme(paket));
+            size_t position = paket.size();
+            paket.resize(65, 0); // Erweitern mit nullen für Block
+            sendBlock(paket, position);
+            //sendBlock(paket)
             break;
         }
     }
@@ -232,12 +282,10 @@ void inputSender() {
 
 int main() {
 
-    drv.setRegister (&DDRA,0x0f ) ; // Konfiguration PORTA: PIN 0-3 output  PIN 4-7 input
+    drv.setRegister (&DDRA,0x0f ); // Konfiguration PORTA: PIN 0-3 output  PIN 4-7 input
     drv.setRegister(&PORTA, 0x0f);
-
     // Start sender and receiver threads
     std::thread senderThread(inputSender);
-    //inputSender();
     std::thread receiverThread(outputReceiver);
 
     //Join threads
