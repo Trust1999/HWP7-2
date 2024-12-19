@@ -30,16 +30,6 @@ uint8_t gerdehtesByte(uint8_t byte) {
     return gedreht >> 4;
 }
 
-void melden(uint8_t a){
-    b15_mutex.lock();    
-    drv.setRegister(&PORTA, 0x0a);
-    //std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    while((drv.getRegister(&PINA) & 0xF0) >> 4 != 0x0F){
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    b15_mutex.unlock();
-} 
-
 // CRC-8 Implementierung (wie im Sender)
 uint8_t berechnungSummeZurueck(const std::vector<uint8_t> &data) {
     
@@ -123,51 +113,17 @@ std::vector<uint8_t> erhaltenesPacket() {
             }
             zwischenspeicher = auslesen();
 
-            if(zwischenspeicher == 0x0D && i%3 == 0 ){
-                test = zwischenspeicher;
-                i--;
-                std::cerr<<"ja ";
-            }
-            else if(zwischenspeicher == 0x0F && i%3 == 0) 
-            {
-                test = zwischenspeicher;
-                i--;
-                std::cerr<<"nein ";
-            }
-            else{
-                erhalteneDaten.push_back(zwischenspeicher&0x07); // Lese 3 bits vom Pin 4-6
-                std::cerr<<"A"<<i<<" ";
-            }
+            erhalteneDaten.push_back(zwischenspeicher&0x07); // Lese 3 bits vom Pin 4-6
+            std::cerr<<"A"<<i<<" ";
+
         }
 
         paket = umwandeln(erhalteneDaten);
 
         uint8_t crc = paket.back();
         paket.pop_back();
-        
-        if(berechnungSummeZurueck(paket) == crc){
-            pruef = 0x0C;
-            schleife = false;
-        }
-        else{
-            pruef = 0x0D;
-            paket.clear();
-        }
-
-        while (test == 0)
-        {
-            if(zwischenspeicher == 0x0D){
-                test = zwischenspeicher;
-                std::cerr<<"gut ";
-            }
-            else if(zwischenspeicher == 0x0F) 
-            {
-                test = zwischenspeicher;
-                std::cerr<<"schlecht ";
-            }
-        }
-        
-        test = 0;
+   
+        schleife = false;
 
     }while(schleife);
 
@@ -202,7 +158,6 @@ uint8_t berechnungSumme(const std::vector<uint8_t> &data) {
             }
         }
     }
-    //std::cerr<<".."<<std::bitset<8>(crc)<<"..";
     return crc;
 }
 
@@ -263,9 +218,10 @@ void sendBlock(const std::vector<uint8_t> &paket, size_t position) {
             }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
-   //}while(false);
-   }while(meldung());
+   }while(false);
+   //}while(meldung());
     schreiben(0x0f,0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 }
 
 void sendBlock(const std::vector<uint8_t> &paket) {
@@ -287,9 +243,10 @@ void sendBlock(const std::vector<uint8_t> &paket) {
             }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    //}while(false);
-    }while(meldung());
+    }while(false);
+    //}while(meldung());
     schreiben(0x0f,0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 }
 
 
