@@ -12,13 +12,13 @@
 B15F drv = B15F :: getInstance () ; //drv wird ein Objekt einer Klasse
 std::mutex b15_mutex;
 bool ende;
-uint8_t test;
-uint8_t pruef;
+bool fertig_schreiben;
+bool fertig_lesen;
 
 
 uint8_t gerdehtesByte(uint8_t byte) {
     unsigned char gedreht = 0;
-    // Iteriere über alle 8 Bits
+    // drehen über alle 8 Bits
     for (int i = 0; i < 8; ++i) {
         // Verschiebe das umgekehrte Byte nach links, um Platz für das neue Bit zu schaffen
         gedreht <<= 1;
@@ -31,13 +31,19 @@ uint8_t gerdehtesByte(uint8_t byte) {
 }
 
 void melden(uint8_t a){
-    b15_mutex.lock();    
-    drv.setRegister(&PORTA, 0x0a);
-    //std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    while((drv.getRegister(&PINA) & 0xF0) >> 4 != 0x0F){
+    fertig_lesen = true;
+
+    while(!fertig_schreiben)
+    {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+
+    b15_mutex.lock();    
+    drv.setRegister(&PORTA, 0x0a);
     b15_mutex.unlock();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    fertig_lesen = false;
 } 
 
 // CRC-8 Implementierung (wie im Sender)
@@ -101,6 +107,7 @@ uint8_t auslesen(){
 // Function to receive a 64-byte block with 9-bit data format
 std::vector<uint8_t> erhaltenesPacket() {
 
+    fertig_lesen = false;
     std::vector<uint8_t> erhalteneDaten;
     std::vector<uint8_t> paket;
     bool schleife = true;
@@ -122,22 +129,7 @@ std::vector<uint8_t> erhaltenesPacket() {
                 //t++;
             }
             zwischenspeicher = auslesen();
-
-            if(zwischenspeicher == 0x0D && i%3 == 0 ){
-                test = zwischenspeicher;
-                i--;
-                std::cerr<<"ja ";
-            }
-            else if(zwischenspeicher == 0x0F && i%3 == 0) 
-            {
-                test = zwischenspeicher;
-                i--;
-                std::cerr<<"nein ";
-            }
-            else{
-                erhalteneDaten.push_back(zwischenspeicher&0x07); // Lese 3 bits vom Pin 4-6
-                std::cerr<<"A"<<i<<" ";
-            }
+            erhalteneDaten.push_back(zwischenspeicher&0x07);
         }
 
         paket = umwandeln(erhalteneDaten);
@@ -146,31 +138,15 @@ std::vector<uint8_t> erhaltenesPacket() {
         paket.pop_back();
         
         if(berechnungSummeZurueck(paket) == crc){
-            pruef = 0x0C;
+            melden(0x0C);
             schleife = false;
         }
         else{
-            pruef = 0x0D;
+            melden(0x0D);
             paket.clear();
         }
 
-        while (test == 0)
-        {
-            if(zwischenspeicher == 0x0D){
-                test = zwischenspeicher;
-                std::cerr<<"gut ";
-            }
-            else if(zwischenspeicher == 0x0F) 
-            {
-                test = zwischenspeicher;
-                std::cerr<<"schlecht ";
-            }
-        }
-        
-        test = 0;
-
     }while(schleife);
-
     return paket;
 }
 
@@ -214,30 +190,29 @@ void schreiben(uint8_t byte, uint8_t cC){
     b15_mutex.unlock();
 }
 
-void pruefSenden(){
-    if(pruef != 0){
-        schreiben(pruef, 0);
-        pruef = 0;
-        std::cerr<<"gesendet";
-        std::this_thread::sleep_for(std::chrono::milliseconds(30));
-    }
-}
-
 bool meldung(){
+
+    fertig_schreiben = true;
+    uint8_t test = 0x00;
+    while (!fertig_lesen){
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
 
     while(true){
         if(test == 0x0D){
             std::cerr<<"hi";
-            return false;
-        }
-        else if(test == 0x0F){
-            std::cerr<<"by";
+            fertig_schreiben = false;
             return true;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(3));
-        pruefSenden();
+        else if(test == 0x0C){
+            std::cerr<<"by";
+            fertig_schreiben = false;
+            return false;
+        }
+        test = auslesen();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    std::cerr<<"time out";
+    fertig_schreiben = false;
     return true;
 }
 
@@ -252,7 +227,6 @@ void sendBlock(const std::vector<uint8_t> &paket, size_t position) {
             uint8_t byte = block.at(z);
 
             if(z == position) maske = 0x04;
-            pruefSenden();
 
             for (int i = 6; i >= 0; i -= 3) {            // Übertragung 3-Bits
                 uint8_t bitsToSend = (byte >> i) & 0x07 | maske; // Nimmt 3 bits
@@ -263,20 +237,18 @@ void sendBlock(const std::vector<uint8_t> &paket, size_t position) {
             }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
-   //}while(false);
-   }while(meldung());
+    }while(meldung());
     schreiben(0x0f,0);
 }
 
 void sendBlock(const std::vector<uint8_t> &paket) {
-    
+
     std::vector<uint8_t> block = paket;    
     
     do{
         size_t counterClock = 0;
 
         for (uint8_t byte: block) {
-            pruefSenden();
             for (int i = 6; i >= 0; i -= 3) {            // Übertragung 3-Bits
                 uint8_t bitsToSend = (byte >> i) & 0x07; // Nimmt 3 bits
 
@@ -287,7 +259,6 @@ void sendBlock(const std::vector<uint8_t> &paket) {
             }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    //}while(false);
     }while(meldung());
     schreiben(0x0f,0);
 }
@@ -348,9 +319,9 @@ int main() {
     drv.setRegister(&PORTA, 0x00); 
 
     synchronisation();
-    test = 0;
-    pruef = 0;
     ende = true;
+    fertig_schreiben = false;
+
     // Start sender and receiver threads
     std::thread senderThread(inputSender);
     std::thread receiverThread(outputReceiver);
