@@ -1,35 +1,28 @@
-void inputSender() {
- std::vector<uint8_t> buffer; // Temporärer Lesepuffer
- std::vector<uint8_t> paket;
-
- while (std::cin.gcount() > 0) {
+size_t paketSize = 0;
+while (std::cin.read(reinterpret_cast<char*>(buffer.data()), buffer.size()) || std::cin.gcount() > 0) {
  size_t bytesRead = std::cin.gcount(); // Anzahl der tatsächlich gelesenen Bytes
-
  // Vergrößern des Buffers, wenn er voll ist
  if (buffer.size() < bytesRead) {
- buffer.reserve(buffer.size() + 1024); // Vergrößern des Buffers um 1024 Bytes
+ buffer.reserve(buffer.size() + 2048); // Vergrößern des Buffers um 2048 Bytes
  }
-
- // Kopieren der gelesenen Daten in den Buffer
- buffer.assign(buffer.begin(), buffer.begin() + bytesRead);
 
  // Verarbeitung der gelesenen Daten
  for (size_t i = 0; i < bytesRead; ++i) {
  paket.push_back(buffer[i]);
-
- if (paket.size() == 64) {
+ paketSize++;
+ if (paketSize == 64) {
  paket.push_back(berechnungSumme(paket));
  sendBlock(paket);
  paket.clear();
+ paketSize = 0;
  }
  }
- }
+}
 
- // Restdaten kleiner als 64 Bytes verarbeiten
- if (!paket.empty()) {
+// Restdaten kleiner als 64 Bytes verarbeiten
+if (!paket.empty()) {
  paket.push_back(berechnungSumme(paket));
  size_t position = paket.size();
  paket.resize(65, 0); // Mit Nullen auffüllen
  sendBlock(paket, position);
- }
 }
