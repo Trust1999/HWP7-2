@@ -1,23 +1,21 @@
-// Definition der Pins
-const int inputPins[] = {2, 3, 4, 5}; // Eingabepins
-const int outputPins[] = {6, 7, 8, 9}; // Ausgabepins
-
 void setup() {
-  // Konfiguration der Eingabepins
-  for (int i = 0; i < 4; i++) {
-    pinMode(inputPins[i], INPUT);
+  Serial.begin(9600); // Serielle Kommunikation starten
+  for (int pin = 2; pin <= 5; pin++) {
+    pinMode(pin, INPUT); // Pins 2-5 als Eingänge
   }
-  
-  // Konfiguration der Ausgabepins
-  for (int i = 0; i < 4; i++) {
-    pinMode(outputPins[i], OUTPUT);
+  for (int pin = 6; pin <= 9; pin++) {
+    pinMode(pin, OUTPUT); // Pins 6-9 als Ausgänge
   }
 }
 
 void loop() {
-  // Lesen der Eingabepins und Setzen der Ausgabepins
-  for (int i = 0; i < 4; i++) {
-    int value = digitalRead(inputPins[i]); // Signal einlesen
-    digitalWrite(outputPins[i], value);   // Signal ausgeben
+  // Lesen der Eingänge
+  String inputStates = "";
+  for (int pin = 2; pin <= 5; pin++) {
+    inputStates += digitalRead(pin); // Zustände der Eingänge sammeln
   }
-}
+
+  Serial.println(inputStates); // Zustände an den Computer senden
+
+  // Prüfen, ob Daten empfangen wurden
+  if (
