@@ -2,14 +2,13 @@
 
 void ComInterface::openCom()
 {
-	std::lock_guard lock(mtx);
-	Logger(DEBUG) << "Opening serial port...";
-	const auto portName = SERIAL_PORT;
+
+	const auto portName = "/dev/ttyUSB0";
 	serialPort = open(portName, O_RDWR | O_NOCTTY | O_NDELAY);
 
 	if (serialPort < 0)
 	{
-		Logger(ERROR) << "Error opening serial port!";
+		std::cerr << "Error opening serial port!";
 		exit(1);
 	}
 
@@ -18,7 +17,7 @@ void ComInterface::openCom()
 
 	if (tcgetattr(serialPort, &tty) != 0)
 	{
-		Logger(ERROR) << "Error getting port settings!";
+		std::cerr<< "Error getting port settings!";
 		exit(1);
 	}
 
@@ -38,50 +37,52 @@ void ComInterface::openCom()
 	// Eingabe- und Ausgabe-Buffer leeren
 	if (tcflush(serialPort, TCIOFLUSH) == -1)
 	{
-		Logger(ERROR) << "Failed to flush buffers.";
+		std::cerr << "Failed to flush buffers.";
 	}
 	else
 	{
-		Logger(DEBUG) << "Serial buffers flushed successfully.";
+		std::cerr << "Serial buffers flushed successfully.";
 	}
 
-	Logger(INFO) << "Serial port open!";
+	std::cerr << "Serial port open!";
 }
 
 void ComInterface::closeCom()
 {
-	std::lock_guard lock(mtx);
-	Logger(DEBUG) << "Closing interface port...";
+	std::cerr << "Closing interface port...";
 	close(serialPort);
 }
 
 void ComInterface::writeByte(const uint8_t data)
 {
-	if (const ssize_t n = write(serialPort, &data, sizeof(data)); n < 0)
-	{
-		throw std::runtime_error("Error writing to serial port!");
-	}
-
-	std::this_thread::sleep_for(std::chrono::milliseconds(WRITE_DELAY));
+    ssize_t n = write(serialPort, &data, sizeof(data));
+    if (n < 0)
+    {
+        throw std::runtime_error("Error writing to serial port!");
+    }
 }
 
-std::optional<uint8_t> ComInterface::readByte()
+
+uint8_t ComInterface::readByte()
 {
-	int bytesAvailable;
-	if (ioctl(serialPort, FIONREAD, &bytesAvailable) == -1)
-	{
-		throw std::runtime_error("Error checking available data on serial port!");
-	}
+    int bytesAvailable;
+    if (ioctl(serialPort, FIONREAD, &bytesAvailable) == -1)
+    {
+        throw std::runtime_error("Error checking available data on serial port!");
+    }
 
-	if (bytesAvailable <= 0)
-	{
-		return std::nullopt;
-	}
+    if (bytesAvailable <= 0)
+    {
+        throw std::runtime_error("No data available to read from serial port!");
+    }
 
-	uint8_t data;
-	if (const ssize_t m = read(serialPort, &data, sizeof(data)); m < 0)
-	{
-		throw std::runtime_error("Error reading from serial port!");
-	}
-	return data;
+    uint8_t data;
+    ssize_t m = read(serialPort, &data, sizeof(data));
+    if (m < 0)
+    {
+        throw std::runtime_error("Error reading from serial port!");
+    }
+    
+    return data;
 }
+
