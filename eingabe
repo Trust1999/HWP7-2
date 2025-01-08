@@ -18,4 +18,15 @@ void loop() {
   Serial.println(inputStates); // Zustände an den Computer senden
 
   // Prüfen, ob Daten empfangen wurden
-  if (
+  if (Serial.available() > 0) {
+    String command = Serial.readStringUntil('\n'); // Empfange einen Befehl bis zum Zeilenumbruch
+    if (command.length() == 4) { // Erwartet genau 4 Zeichen (für Pins 6-9)
+      for (int i = 0; i < 4; i++) {
+        int pin = 6 + i;
+        int value = command[i] - '0'; // Konvertiere Zeichen zu Zahl
+        digitalWrite(pin, value); // Setze Pin-Zustand
+      }
+    }
+  }
+}
+
