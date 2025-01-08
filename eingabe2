@@ -1,40 +1,37 @@
 #include <iostream>
 #include <string>
-#include <SerialStream.h> // Beispiel: libserial-dev unter Linux installieren
-
-using namespace LibSerial;
 
 int main() {
-    SerialStream arduino;
+    
+    // Öffnen der seriellen Schnittstelle
+    std::cout<<"Hallo Welt";
+    std::string portName = "COM3"; // Ändern Sie die Port-Bezeichnung nach Bedarf
+    int baudRate = 9600;
 
-    // Serielle Schnittstelle öffnen
-    arduino.Open("/dev/ttyUSB0"); // Pfad anpassen
-    arduino.SetBaudRate(SerialStreamBuf::BAUD_9600);
-    arduino.SetCharSize(SerialStreamBuf::CHAR_SIZE_8);
+    // Öffnen der seriellen Schnittstelle
+    std::cout << "Öffnen der seriellen Schnittstelle..." << std::endl;
+    FILE* file = fopen(portName.c_str(), "r+");
 
-    if (!arduino.IsOpen()) {
-        std::cerr << "Fehler: Kann serielle Schnittstelle nicht öffnen!" << std::endl;
-        return 1;
-    }
-
-    std::cout << "Verbindung hergestellt. Lesen und Schreiben starten..." << std::endl;
-
-    while (true) {
-        // Daten vom Arduino lesen
-        std::string inputStates;
-        std::getline(arduino, inputStates);
-
-        if (!inputStates.empty()) {
-            std::cout << "Arduino Eingänge: " << inputStates << std::endl;
+    // Lesen der Pins
+    std::cout << "Lesen der Pins..." << std::endl;
+    uint8_t buffer[1024];
+    while (fread(buffer, 1, 1024, file) == 1024) {
+        for (int i = 0; i < 1024; i++) {
+            std::cout << (int)buffer[i];
         }
-
-        // Daten an Arduino senden
-        std::string outputStates = "1010"; // Beispiel: Muster zum Testen
-        arduino << outputStates << "\n"; // Schreiben und abschicken
-
-        usleep(500000); // Warte 500 ms
+        std::cout << std::endl;
     }
 
-    arduino.Close();
+    // Schreiben auf die Pins
+    std::cout << "Schreiben auf die Pins..." << std::endl;
+    uint8_t* data;
+    std::cin>>data;
+    //uint8_t* data = (uint8_t*)"Hallo, Arduino!";
+    fwrite(data, 1, 13, file);
+
+    // Schließen der seriellen Schnittstelle
+    std::cout << "Schließen der seriellen Schnittstelle..." << std::endl;
+    fclose(file);
+
     return 0;
 }
