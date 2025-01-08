@@ -57,3 +57,26 @@ void loop()
   Serial.write(nibble);  // Sende das gelesene Nibble
   delay(1);  // Optional, um das System nicht zu überlasten
 }
+
+void setup() {
+  // Initialisiere den seriellen Monitor mit 9600 Baud
+  Serial.begin(9600);
+}
+
+void loop() {
+  // Überprüfe, ob Daten vom seriellen Port empfangen wurden
+  if (Serial.available() > 0) {
+    // Lese das empfangene Zeichen
+    char receivedChar = Serial.read();
+
+    // Zeige das empfangene Zeichen im seriellen Monitor an
+    Serial.print("Empfangenes Zeichen: ");
+    Serial.println(receivedChar, HEX);
+
+    // Sende eine Bestätigung zurück (z.B. den Wert 0x0F, wie im C++-Code)
+    Serial.write(0x0F);
+  }
+
+  // Füge eine kleine Verzögerung hinzu, um den Prozessor nicht zu überlasten
+  delay(10);
+}
