@@ -34,6 +34,46 @@ int main() {
         std::cerr << "Ошибка: " << e.what() << std::endl;
     }
 
+#include <iostream>
+#include <boost/asio.hpp>
+#include <bitset> // Zur Verwendung von std::bitset
+
+// Funktion zum Lesen von Daten vom seriellen Port
+void readFromSerial(boost::asio::serial_port& serial) {
+    char c;
+    boost::asio::read(serial, boost::asio::buffer(&c, 1));
+
+    // Umwandlung von char zu uint8_t für die korrekte Verwendung mit std::bitset
+    uint8_t value = static_cast<uint8_t>(c);
+    std::cout << "Empfangenes Wert vom Port D: " << std::bitset<8>(value) << std::endl;
+}
+
+// Funktion zum Schreiben von Daten in den seriellen Port
+void writeToSerial(boost::asio::serial_port& serial, char value) {
+    boost::asio::write(serial, boost::asio::buffer(&value, 1));
+}
+
+int main() {
+    try {
+        boost::asio::io_service io;
+        boost::asio::serial_port serial(io, "/dev/ttyUSB1"); // Ersetzen Sie dies mit Ihrem seriellen Port
+        serial.set_option(boost::asio::serial_port_base::baud_rate(9600));
+
+        while (true) {
+            // Aufruf der Funktion zum Lesen von Daten vom seriellen Port
+            readFromSerial(serial);
+
+            // Aufruf der Funktion zum Schreiben des Werts 0x0F auf Arduino
+            writeToSerial(serial, 0x0F);
+        }
+    } catch (boost::system::system_error& e) {
+        std::cerr << "Fehler: " << e.what() << std::endl;
+    }
+
+    return 0;
+}
+
+
     return 0;
   
 }
