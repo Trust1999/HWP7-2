@@ -1,35 +1,23 @@
-void inputSender() {
- std::vector<uint8_t> buffer; // Temporärer Lesepuffer
- std::vector<uint8_t> paket;
+// Definition der Pins
+const int inputPins[] = {2, 3, 4, 5}; // Eingabepins
+const int outputPins[] = {6, 7, 8, 9}; // Ausgabepins
 
- while (std::cin.gcount() > 0) {
- size_t bytesRead = std::cin.gcount(); // Anzahl der tatsächlich gelesenen Bytes
+void setup() {
+  // Konfiguration der Eingabepins
+  for (int i = 0; i < 4; i++) {
+    pinMode(inputPins[i], INPUT);
+  }
+  
+  // Konfiguration der Ausgabepins
+  for (int i = 0; i < 4; i++) {
+    pinMode(outputPins[i], OUTPUT);
+  }
+}
 
- // Vergrößern des Buffers, wenn er voll ist
- if (buffer.size() < bytesRead) {
- buffer.reserve(buffer.size() + 1024); // Vergrößern des Buffers um 1024 Bytes
- }
-
- // Kopieren der gelesenen Daten in den Buffer
- buffer.assign(buffer.begin(), buffer.begin() + bytesRead);
-
- // Verarbeitung der gelesenen Daten
- for (size_t i = 0; i < bytesRead; ++i) {
- paket.push_back(buffer[i]);
-
- if (paket.size() == 64) {
- paket.push_back(berechnungSumme(paket));
- sendBlock(paket);
- paket.clear();
- }
- }
- }
-
- // Restdaten kleiner als 64 Bytes verarbeiten
- if (!paket.empty()) {
- paket.push_back(berechnungSumme(paket));
- size_t position = paket.size();
- paket.resize(65, 0); // Mit Nullen auffüllen
- sendBlock(paket, position);
- }
+void loop() {
+  // Lesen der Eingabepins und Setzen der Ausgabepins
+  for (int i = 0; i < 4; i++) {
+    int value = digitalRead(inputPins[i]); // Signal einlesen
+    digitalWrite(outputPins[i], value);   // Signal ausgeben
+  }
 }
