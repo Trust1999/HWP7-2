@@ -8,10 +8,8 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <termios.h>
-#include <thread>
 
-#include "../lib/header/ICommunicationInterface.hpp"
-#include "../lib/header/Logger.hpp"
+#include "ICommunicationInterface.hpp"
 
 // SAVE WORKING: 35ms to 32ms
 #define WRITE_DELAY 35
@@ -32,7 +30,7 @@ public:
 	 * @brief Reads a byte of data from the interface port.
 	 * @return The byte of data read, or -1 on error.
 	 */
-	std::optional<uint8_t> readByte() override;
+	uint8_t readByte() override;
 
 	/**
 	 * @brief Sets up the interface port with the specified settings.
