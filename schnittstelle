@@ -1,158 +1,83 @@
 #include <iostream>
-#include <iomanip>
-#include <stdexcept>
-#include <cstdint>
-#include <string>
 #include <fstream>
-#include <chrono>
-#include <thread>
-
-#ifdef _WIN32
-#include <windows.h>
-#else
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
-#endif
+#include <cstring>
 
-class SerialPort
-{
-public:
-    SerialPort(const std::string& portName, int baudRate)
-    {
-#ifdef _WIN32
-        hSerial = CreateFile(portName.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-        if (hSerial == INVALID_HANDLE_VALUE)
-            throw std::runtime_error("Unable to open serial port");
+void configurePort(int fd) {
+    struct termios tty;
 
-        DCB dcbSerialParams = { 0 };
-        dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
-
-        if (!GetCommState(hSerial, &dcbSerialParams))
-            throw std::runtime_error("Failed to get serial port state");
-
-        dcbSerialParams.BaudRate = baudRate;
-        dcbSerialParams.ByteSize = 8;
-        dcbSerialParams.StopBits = ONESTOPBIT;
-        dcbSerialParams.Parity = NOPARITY;
-
-        if (!SetCommState(hSerial, &dcbSerialParams))
-            throw std::runtime_error("Failed to set serial port state");
-#else
-        fd = open(portName.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
-        if (fd < 0)
-            throw std::runtime_error("Unable to open serial port");
-
-        struct termios tty = {};
-        if (tcgetattr(fd, &tty) != 0)
-            throw std::runtime_error("Failed to get serial port attributes");
-
-        cfsetospeed(&tty, baudRate);
-        cfsetispeed(&tty, baudRate);
-
-        tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8; // 8-bit chars
-        tty.c_iflag &= ~IGNBRK;                    // disable break processing
-        tty.c_lflag = 0;                           // no signaling chars, no echo, no canonical processing
-        tty.c_oflag = 0;                           // no remapping, no delays
-        tty.c_cc[VMIN] = 1;                        // read doesn't block
-        tty.c_cc[VTIME] = 1;                       // 0.1 seconds read timeout
-
-        tty.c_cflag |= (CLOCAL | CREAD);           // enable receiver, local mode
-        tty.c_cflag &= ~(PARENB | PARODD);         // shut off parity
-        tty.c_cflag &= ~CSTOPB;
-        tty.c_cflag &= ~CRTSCTS;
-
-        if (tcsetattr(fd, TCSANOW, &tty) != 0)
-            throw std::runtime_error("Failed to set serial port attributes");
-#endif
+    if (tcgetattr(fd, &tty) != 0) {
+        std::cerr << "Error getting terminal attributes: " << strerror(errno) << std::endl;
+        exit(EXIT_FAILURE);
     }
 
-    ~SerialPort()
-    {
-#ifdef _WIN32
-        CloseHandle(hSerial);
-#else
-        close(fd);
-#endif
+    // Baudrate einstellen (115200)
+    cfsetospeed(&tty, B115200);
+    cfsetispeed(&tty, B115200);
+
+    // Modus: 8N1 (8 Datenbits, keine Parität, 1 Stoppbit)
+    tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
+    tty.c_cflag |= (CLOCAL | CREAD); // Lokale Verbindung, Lesen erlauben
+    tty.c_cflag &= ~PARENB;          // Keine Parität
+    tty.c_cflag &= ~CSTOPB;          // 1 Stoppbit
+    tty.c_cflag &= ~CRTSCTS;         // Keine Hardware-Flowkontrolle
+
+    tty.c_lflag = 0; // Keine Canonical-Modus, kein Echo
+
+    tty.c_iflag &= ~(IXON | IXOFF | IXANY); // Keine Software-Flowkontrolle
+    tty.c_iflag &= ~(ICRNL | INLCR); // Keine automatischen Zeilenkonvertierungen
+
+    tty.c_oflag = 0; // Keine Ausgabeverarbeitung
+
+    tty.c_cc[VMIN] = 1;  // Mindestens 1 Zeichen lesen
+    tty.c_cc[VTIME] = 1; // Timeout von 0.1 Sekunden
+
+    if (tcsetattr(fd, TCSANOW, &tty) != 0) {
+        std::cerr << "Error setting terminal attributes: " << strerror(errno) << std::endl;
+        exit(EXIT_FAILURE);
     }
-
-    void writeByte(uint8_t byte)
-    {
-#ifdef _WIN32
-        DWORD bytesWritten;
-        if (!WriteFile(hSerial, &byte, 1, &bytesWritten, nullptr))
-            throw std::runtime_error("Failed to write to serial port");
-#else
-        if (write(fd, &byte, 1) != 1)
-            throw std::runtime_error("Failed to write to serial port");
-#endif
-    }
-
-    uint8_t readByte()
-    {
-        uint8_t byte;
-#ifdef _WIN32
-        DWORD bytesRead;
-        if (!ReadFile(hSerial, &byte, 1, &bytesRead, nullptr) || bytesRead != 1)
-            throw std::runtime_error("Failed to read from serial port");
-#else
-        if (read(fd, &byte, 1) != 1)
-            throw std::runtime_error("Failed to read from serial port");
-#endif
-        return byte;
-    }
-
-private:
-#ifdef _WIN32
-    HANDLE hSerial;
-#else
-    int fd;
-#endif
-};
-
-void writeToArduino(SerialPort& port, uint8_t value)
-{
-    const uint8_t writeCommand = 0x05; // Command to write pins
-    port.writeByte(writeCommand);
-    port.writeByte(value);
 }
 
-uint8_t readFromArduino(SerialPort& port)
-{
-    return port.readByte();
-}
+int main() {
+    const char* portName = "/dev/ttyUSB0"; // Seriellen Port anpassen
 
-int main()
-{
-    try
-    {
-        SerialPort arduino("/dev/ttyUSB0", B57600); // Adjust port as needed
-
-        while (true)
-        {
-            std::cout << "Enter a value to write to pins (0-15): ";
-            int value;
-            std::cin >> value;
-
-            if (value < 0 || value > 15)
-            {
-                std::cout << "Invalid input. Value must be between 0 and 15.\n";
-                continue;
-            }
-
-            writeToArduino(arduino, static_cast<uint8_t>(value));
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Allow Arduino to process
-
-            uint8_t received = readFromArduino(arduino);
-            std::cout << "Read value from Arduino: " << static_cast<int>(received) << "\n";
-        }
-    }
-    catch (const std::exception& ex)
-    {
-        std::cerr << "Error: " << ex.what() << "\n";
-        return 1;
+    // Seriellen Port öffnen
+    int serialPort = open(portName, O_RDWR | O_NOCTTY | O_SYNC);
+    if (serialPort < 0) {
+        std::cerr << "Error opening serial port: " << strerror(errno) << std::endl;
+        return EXIT_FAILURE;
     }
 
+    configurePort(serialPort);
+
+    std::cout << "Serial port configured successfully." << std::endl;
+
+    // Daten an Arduino senden
+    const char* message = "Hello, Arduino!\n";
+    ssize_t bytesWritten = write(serialPort, message, strlen(message));
+    if (bytesWritten < 0) {
+        std::cerr << "Error writing to serial port: " << strerror(errno) << std::endl;
+        close(serialPort);
+        return EXIT_FAILURE;
+    }
+
+    std::cout << "Message sent to Arduino." << std::endl;
+
+    // Antwort vom Arduino lesen
+    char buffer[256];
+    memset(buffer, 0, sizeof(buffer));
+    ssize_t bytesRead = read(serialPort, buffer, sizeof(buffer) - 1);
+    if (bytesRead < 0) {
+        std::cerr << "Error reading from serial port: " << strerror(errno) << std::endl;
+        close(serialPort);
+        return EXIT_FAILURE;
+    }
+
+    std::cout << "Received from Arduino: " << buffer << std::endl;
+
+    // Seriellen Port schließen
+    close(serialPort);
     return 0;
 }
